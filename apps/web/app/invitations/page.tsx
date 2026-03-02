@@ -59,9 +59,25 @@ export default function Invitations() {
             if (user) {
                 setUserId(user.id);
                 fetchTemplates();
+                fetchInvitations();
             }
         } catch (err) {
             console.error('Auth init error:', err);
+        }
+    };
+
+    const fetchInvitations = async () => {
+        try {
+            const res = await axios.get(`${API_URL}/invitations`);
+            const loaded = res.data.map((inv: any) => ({
+                id: inv.id,
+                guestName: inv.guests?.name || 'Unknown',
+                status: inv.status,
+                pdfUrl: inv.pdf_url || undefined,
+            }));
+            setInvitations(loaded);
+        } catch (err) {
+            console.error('Failed to fetch invitations:', err);
         }
     };
 
@@ -129,6 +145,27 @@ export default function Invitations() {
             setInvitations(prev => prev.map(inv =>
                 inv.id === newInvite.id ? { ...inv, status: 'failed' as const } : inv
             ));
+        }
+    };
+
+    const handleRegenerate = async (id: string) => {
+        setInvitations(prev => prev.map(inv => inv.id === id ? { ...inv, status: 'processing' } : inv));
+        try {
+            const res = await axios.post(`${API_URL}/invitations/${id}/generate`);
+            setInvitations(prev => prev.map(inv => inv.id === id ? { ...inv, status: 'completed', pdfUrl: res.data.url } : inv));
+        } catch (err: any) {
+            console.error('Failed to regenerate:', err);
+            setInvitations(prev => prev.map(inv => inv.id === id ? { ...inv, status: 'failed' } : inv));
+        }
+    };
+
+    const handleDelete = async (id: string) => {
+        if (!confirm('Are you sure you want to delete this invitation?')) return;
+        try {
+            await axios.delete(`${API_URL}/invitations/${id}`);
+            setInvitations(prev => prev.filter(inv => inv.id !== id));
+        } catch (err) {
+            console.error('Failed to delete:', err);
         }
     };
 
@@ -206,20 +243,38 @@ export default function Invitations() {
                                     </span>
                                 </td>
                                 <td className="p-4">
-                                    {inv.status === 'completed' && inv.pdfUrl ? (
-                                        <a
-                                            href={inv.pdfUrl}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="text-blue-600 hover:text-blue-800 flex items-center gap-1 font-medium"
-                                        >
-                                            <Download size={16} /> Download
-                                        </a>
-                                    ) : (
-                                        <span className="text-gray-400 text-sm">
-                                            {inv.status === 'processing' || inv.status === 'pending' ? <Loader2 className="animate-spin" size={16} /> : '-'}
-                                        </span>
-                                    )}
+                                    <div className="flex items-center gap-4">
+                                        {inv.status === 'completed' && inv.pdfUrl ? (
+                                            <a
+                                                href={inv.pdfUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="text-blue-600 hover:text-blue-800 flex items-center gap-1 font-medium shrink-0"
+                                            >
+                                                <Download size={16} /> Download
+                                            </a>
+                                        ) : (inv.status === 'processing' || inv.status === 'pending') ? (
+                                            <span className="text-gray-400 text-sm flex items-center gap-1 shrink-0">
+                                                <Loader2 className="animate-spin" size={16} /> Processing
+                                            </span>
+                                        ) : (
+                                            <button
+                                                onClick={() => handleRegenerate(inv.id)}
+                                                className="text-blue-600 hover:text-blue-800 text-sm font-medium shrink-0"
+                                            >
+                                                Generate PDF
+                                            </button>
+                                        )}
+
+                                        {!(inv.status === 'processing' || inv.status === 'pending') && (
+                                            <button
+                                                onClick={() => handleDelete(inv.id)}
+                                                className="text-red-500 hover:text-red-700 text-sm shrink-0"
+                                            >
+                                                Delete
+                                            </button>
+                                        )}
+                                    </div>
                                 </td>
                             </tr>
                         ))}

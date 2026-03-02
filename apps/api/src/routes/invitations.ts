@@ -232,4 +232,93 @@ router.post('/bulk', async (req, res) => {
     res.json({ message: 'Not implemented' });
 });
 
+// Regenerate PDF for an existing invitation
+router.post('/:id/generate', async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Fetch invitation
+        const { data: invitation, error: inviteError } = await supabase
+            .from('invitations')
+            .select('*, guests (name, user_id)')
+            .eq('id', id)
+            .single();
+
+        if (inviteError || !invitation) {
+            return res.status(404).json({ error: 'Invitation not found' });
+        }
+
+        // Update status to processing
+        await supabase.from('invitations').update({ status: 'processing' }).eq('id', id);
+
+        // Fetch template
+        const { data: template, error: templateError } = await supabase
+            .from('templates')
+            .select('*')
+            .eq('id', invitation.template_id)
+            .single();
+
+        if (templateError || !template) {
+            return res.status(404).json({ error: 'Template not found' });
+        }
+
+        // We assume guest joined data is single object for a many-to-one foreign key
+        const guestData = Array.isArray(invitation.guests) ? invitation.guests[0] : invitation.guests;
+        const guestName = guestData?.name || '';
+        const userId = guestData?.user_id || 'unknown';
+
+        try {
+            const pdfBuffer = await generatePDF(template, guestName);
+            const pdfPath = `pdfs/${userId}/${invitation.id}.pdf`;
+
+            const { error: uploadError } = await supabase.storage
+                .from('assets')
+                .upload(pdfPath, pdfBuffer, {
+                    contentType: 'application/pdf',
+                    upsert: true,
+                });
+
+            if (uploadError) throw uploadError;
+
+            const { data: { publicUrl } } = supabase.storage
+                .from('assets')
+                .getPublicUrl(pdfPath);
+
+            await supabase
+                .from('invitations')
+                .update({ status: 'completed', pdf_url: publicUrl })
+                .eq('id', invitation.id);
+
+            res.json({ message: 'Generated successfully', url: publicUrl });
+        } catch (pdfError: any) {
+            await supabase
+                .from('invitations')
+                .update({ status: 'failed', error_message: pdfError.message })
+                .eq('id', invitation.id);
+            res.status(500).json({ error: pdfError.message });
+        }
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Delete an invitation
+router.delete('/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // delete invitation
+        const { error } = await supabase
+            .from('invitations')
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
+
+        res.json({ message: 'Deleted successfully' });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 export const invitationRouter = router;
