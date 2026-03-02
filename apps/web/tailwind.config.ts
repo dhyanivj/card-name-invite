@@ -1,0 +1,17 @@
+import type { Config } from 'tailwindcss'
+
+const config: Config = {
+    content: [
+        './app/**/*.{js,ts,jsx,tsx,mdx}',
+    ],
+    theme: {
+        extend: {
+            colors: {
+                primary: '#D4AF37', // Gold for wedding theme
+                secondary: '#f3f4f6',
+            },
+        },
+    },
+    plugins: [],
+}
+export default config
