@@ -11,11 +11,18 @@ export default function NewTemplate() {
     const fabricCanvasRef = useRef<any>(null);
     const initRef = useRef(false);
     const [templateName, setTemplateName] = useState('');
-    const [image, setImage] = useState<File | null>(null);
+
+    interface TemplatePage {
+        id: string;
+        file?: File;
+        url?: string;
+        preview: string;
+    }
+    const [pages, setPages] = useState<TemplatePage[]>([]);
+
     const [saving, setSaving] = useState(false);
     const [canvasReady, setCanvasReady] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
-    const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
 
     // Track selected object properties for UI controls
     const [selectedProps, setSelectedProps] = useState<{
@@ -142,11 +149,23 @@ export default function NewTemplate() {
 
             setEditingId(template.id);
             setTemplateName(template.name);
-            setExistingImageUrl(template.front_image_url);
 
-            // Load background image
-            if (template.front_image_url) {
-                fabricModule.fabric.Image.fromURL(template.front_image_url, (img: any) => {
+            const config = template.config;
+            const loadedPages: TemplatePage[] = [];
+
+            if (config?.pages && Array.isArray(config.pages)) {
+                config.pages.forEach((pUrl: string, idx: number) => {
+                    loadedPages.push({ id: `existing-${idx}`, url: pUrl, preview: pUrl });
+                });
+            } else if (template.front_image_url) {
+                loadedPages.push({ id: 'existing-0', url: template.front_image_url, preview: template.front_image_url });
+            }
+
+            setPages(loadedPages);
+
+            // Load background image (first page)
+            if (loadedPages.length > 0) {
+                fabricModule.fabric.Image.fromURL(loadedPages[0].preview, (img: any) => {
                     img.scaleToWidth(500);
                     canvas.setBackgroundImage(img, () => {
                         canvas.renderAll();
@@ -156,7 +175,6 @@ export default function NewTemplate() {
             }
 
             // Load text placeholders
-            const config = template.config;
             const placeholders = config?.placeholders || [];
             for (const ph of placeholders) {
                 const text = new fabricModule.fabric.IText(ph.text || 'Guest Name', {
@@ -194,26 +212,89 @@ export default function NewTemplate() {
     }, []);
 
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const fileList = e.target.files;
+        if (!fileList || fileList.length === 0) return;
+
+        const newPages: TemplatePage[] = [];
+        Array.from(fileList).forEach((file) => {
+            const preview = URL.createObjectURL(file);
+            newPages.push({ id: Math.random().toString(36).substring(7), file, preview });
+        });
+
+        setPages(prev => {
+            const updated = [...prev, ...newPages];
+            // If it's the first image ever, load it onto the canvas
+            if (prev.length === 0 && updated.length > 0) {
+                const canvas = fabricCanvasRef.current;
+                if (canvas) {
+                    import('fabric').then((mod) => {
+                        mod.fabric.Image.fromURL(updated[0].preview, (img) => {
+                            img.scaleToWidth(500);
+                            canvas.setBackgroundImage(img, () => {
+                                canvas.renderAll();
+                                canvas.calcOffset();
+                            });
+                        });
+                    });
+                }
+            }
+            return updated;
+        });
+
+        // Clear input value so same files can be uploaded again if needed
+        e.target.value = '';
+    };
+
+    const updateCanvasBackgroundIfFirstChanged = (prev: TemplatePage[], next: TemplatePage[]) => {
         const canvas = fabricCanvasRef.current;
-        if (e.target.files && e.target.files[0] && canvas) {
-            const file = e.target.files[0];
-            setImage(file);
-            setExistingImageUrl(null); // user uploading a new image
-            const reader = new FileReader();
-            reader.onload = (f) => {
-                const data = f.target?.result as string;
+        if (!canvas) return;
+
+        const prevFirst = prev[0]?.preview;
+        const nextFirst = next[0]?.preview;
+
+        if (prevFirst !== nextFirst) {
+            if (nextFirst) {
                 import('fabric').then((mod) => {
-                    mod.fabric.Image.fromURL(data, (img) => {
+                    mod.fabric.Image.fromURL(nextFirst, (img) => {
                         img.scaleToWidth(500);
                         canvas.setBackgroundImage(img, () => {
                             canvas.renderAll();
                             canvas.calcOffset();
                         });
-                    });
+                    }, next[0].url ? { crossOrigin: 'anonymous' } : undefined);
                 });
-            };
-            reader.readAsDataURL(file);
+            } else {
+                canvas.setBackgroundImage(null, () => canvas.renderAll());
+            }
         }
+    };
+
+    const movePageUp = (index: number) => {
+        if (index === 0) return;
+        setPages(prev => {
+            const next = [...prev];
+            [next[index - 1], next[index]] = [next[index], next[index - 1]];
+            updateCanvasBackgroundIfFirstChanged(prev, next);
+            return next;
+        });
+    };
+
+    const movePageDown = (index: number) => {
+        setPages(prev => {
+            if (index === prev.length - 1) return prev;
+            const next = [...prev];
+            [next[index], next[index + 1]] = [next[index + 1], next[index]];
+            updateCanvasBackgroundIfFirstChanged(prev, next);
+            return next;
+        });
+    };
+
+    const removePage = (index: number) => {
+        setPages(prev => {
+            const next = prev.filter((_, i) => i !== index);
+            updateCanvasBackgroundIfFirstChanged(prev, next);
+            return next;
+        });
     };
 
     const addTextPlaceholder = () => {
@@ -265,7 +346,7 @@ export default function NewTemplate() {
     const saveTemplate = async () => {
         const canvas = fabricCanvasRef.current;
         if (!templateName) return alert('Please enter a template name');
-        if (!image && !existingImageUrl) return alert('Please upload a front image');
+        if (pages.length === 0) return alert('Please upload at least one page');
         if (!canvas) return;
 
         setSaving(true);
@@ -289,26 +370,31 @@ export default function NewTemplate() {
                 return;
             }
 
-            // Determine the image URL
-            let publicUrl = existingImageUrl;
+            // Process uploads for all pages
+            const uploadedPageUrls: string[] = [];
+            for (let i = 0; i < pages.length; i++) {
+                const p = pages[i];
+                if (p.url) {
+                    uploadedPageUrls.push(p.url);
+                } else if (p.file) {
+                    const fileExt = p.file.name.split('.').pop() || 'png';
+                    const fileName = `${Math.random().toString(36).substring(7)}.${fileExt}`;
+                    const filePath = `${user.id}/${fileName}`;
 
-            if (image) {
-                // Upload new image
-                const fileExt = image.name.split('.').pop();
-                const fileName = `${Math.random()}.${fileExt}`;
-                const filePath = `${user.id}/${fileName}`;
+                    const { error: uploadError } = await supabase.storage
+                        .from('assets')
+                        .upload(filePath, p.file);
 
-                const { error: uploadError } = await supabase.storage
-                    .from('assets')
-                    .upload(filePath, image);
+                    if (uploadError) throw uploadError;
 
-                if (uploadError) throw uploadError;
-
-                const { data: urlData } = supabase.storage
-                    .from('assets')
-                    .getPublicUrl(filePath);
-                publicUrl = urlData.publicUrl;
+                    const { data: urlData } = supabase.storage
+                        .from('assets')
+                        .getPublicUrl(filePath);
+                    uploadedPageUrls.push(urlData.publicUrl);
+                }
             }
+
+            const frontImageUrl = uploadedPageUrls.length > 0 ? uploadedPageUrls[0] : null;
 
             // Normalize all text objects before extracting config
             const objects = canvas.getObjects('i-text');
@@ -316,7 +402,7 @@ export default function NewTemplate() {
             canvas.requestRenderAll();
 
             // Extract config with normalized values
-            const config = objects.map((obj: any) => ({
+            const placeholders = objects.map((obj: any) => ({
                 type: 'text',
                 text: obj.text,
                 left: Math.round(obj.left),
@@ -327,14 +413,16 @@ export default function NewTemplate() {
                 id: 'guest_name',
             }));
 
+            const configPayload = { placeholders, pages: uploadedPageUrls };
+
             if (editingId) {
                 // Update existing template
                 const { error: dbError } = await supabase
                     .from('templates')
                     .update({
                         name: templateName,
-                        front_image_url: publicUrl,
-                        config: { placeholders: config },
+                        front_image_url: frontImageUrl,
+                        config: configPayload,
                     })
                     .eq('id', editingId);
 
@@ -345,8 +433,8 @@ export default function NewTemplate() {
                 const { error: dbError } = await supabase.from('templates').insert({
                     user_id: user.id,
                     name: templateName,
-                    front_image_url: publicUrl,
-                    config: { placeholders: config },
+                    front_image_url: frontImageUrl,
+                    config: configPayload,
                 });
 
                 if (dbError) throw dbError;
@@ -383,14 +471,31 @@ export default function NewTemplate() {
                         </div>
                         <div>
                             <label className="block text-sm font-medium mb-1">
-                                Background Image {editingId && '(leave empty to keep current)'}
+                                Template Pages
                             </label>
                             <input
                                 type="file"
                                 onChange={handleImageUpload}
                                 accept="image/*"
-                                className="text-sm w-full"
+                                multiple
+                                className="text-sm w-full mb-3"
                             />
+                            {pages.length > 0 && (
+                                <div className="space-y-2 border rounded p-3 bg-gray-50 max-h-60 overflow-y-auto">
+                                    {pages.map((p, index) => (
+                                        <div key={p.id} className="flex items-center gap-3 bg-white p-2 rounded shadow-sm border">
+                                            <span className="text-xs font-bold text-gray-400 w-4">{index + 1}</span>
+                                            <img src={p.preview} alt={`Page ${index + 1}`} className="w-10 h-14 object-cover rounded bg-gray-100" />
+                                            <div className="flex-1"></div>
+                                            <div className="flex flex-col gap-1">
+                                                <button onClick={() => movePageUp(index)} disabled={index === 0} className="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded disabled:opacity-50">↑</button>
+                                                <button onClick={() => movePageDown(index)} disabled={index === pages.length - 1} className="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded disabled:opacity-50">↓</button>
+                                            </div>
+                                            <button onClick={() => removePage(index)} className="text-red-500 hover:bg-red-50 px-2 py-1 rounded">✕</button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

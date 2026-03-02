@@ -92,17 +92,27 @@ router.post('/send', async (req, res) => {
 });
 
 async function generatePDF(template: any, guestName: string): Promise<Buffer> {
-    // Download the template image
-    const imageUrl = template.front_image_url;
-    const imageResponse = await fetch(imageUrl);
-    if (!imageResponse.ok) {
-        throw new Error(`Failed to download template image: ${imageResponse.status}`);
-    }
-    const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
+    const config = template.config || {};
+    let pageUrls: string[] = [];
 
-    // Determine image type from URL
-    const isJpg = imageUrl.toLowerCase().match(/\.(jpg|jpeg)/) !== null;
-    const isPng = imageUrl.toLowerCase().match(/\.png/) !== null;
+    if (config.pages && Array.isArray(config.pages) && config.pages.length > 0) {
+        pageUrls = config.pages;
+    } else if (template.front_image_url) {
+        pageUrls = [template.front_image_url];
+    } else {
+        throw new Error('No template images found');
+    }
+
+    // Download all images concurrently
+    const imageBuffers: Buffer[] = await Promise.all(
+        pageUrls.map(async (url) => {
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`Failed to download template image: ${response.status}`);
+            }
+            return Buffer.from(await response.arrayBuffer());
+        })
+    );
 
     // Create PDF
     return new Promise<Buffer>((resolve, reject) => {
@@ -121,53 +131,57 @@ async function generatePDF(template: any, guestName: string): Promise<Buffer> {
             doc.on('end', () => resolve(Buffer.concat(chunks)));
             doc.on('error', reject);
 
-            // Draw background image
-            try {
-                doc.image(imageBuffer, 0, 0, {
-                    width: pageWidth,
-                    height: pageHeight,
-                });
-            } catch (imgErr) {
-                console.error('Image embed error, using plain background:', imgErr);
-                doc.rect(0, 0, pageWidth, pageHeight).fill('#f5f5f5');
-            }
-
-            // Overlay text placeholders from config
-            const config = template.config;
-            const placeholders = config?.placeholders || [];
-
-            if (placeholders.length > 0) {
-                for (const placeholder of placeholders) {
-                    const text = guestName;
-                    const x = placeholder.left || 150;
-                    const y = placeholder.top || 300;
-                    const fontSize = placeholder.fontSize || 30;
-                    const fontFamily = placeholder.fontFamily || 'Helvetica';
-                    const fill = placeholder.fill || '#000000';
-
-                    const pdfFont = mapToPDFFont(fontFamily);
-
-                    // PDFKit internally adds the font ascender to the y position,
-                    // which shifts text down. Compensate by subtracting ~20% of fontSize
-                    // (typical ascender ratio for built-in fonts).
-                    doc.font(pdfFont).fontSize(fontSize);
-                    const ascenderOffset = ((doc as any)._font.ascender / 1000) * fontSize;
-                    const adjustedY = y - ascenderOffset;
-
-                    doc.fillColor(fill)
-                        .text(text, x, adjustedY, {
-                            lineBreak: false,
-                        });
+            for (let i = 0; i < imageBuffers.length; i++) {
+                if (i > 0) {
+                    doc.addPage({ size: [pageWidth, pageHeight], margin: 0 });
                 }
-            } else {
-                // Fallback: place guest name in center
-                doc.font('Helvetica-Bold')
-                    .fontSize(36)
-                    .fillColor('#000000')
-                    .text(guestName, 0, pageHeight / 2, {
+
+                // Draw background image
+                try {
+                    doc.image(imageBuffers[i], 0, 0, {
                         width: pageWidth,
-                        align: 'center',
+                        height: pageHeight,
                     });
+                } catch (imgErr) {
+                    console.error(`Image embed error on page ${i}, using plain background:`, imgErr);
+                    doc.rect(0, 0, pageWidth, pageHeight).fill('#f5f5f5');
+                }
+
+                // Overlay text placeholders from config ONLY on the first page
+                if (i === 0) {
+                    const placeholders = config.placeholders || [];
+
+                    if (placeholders.length > 0) {
+                        for (const placeholder of placeholders) {
+                            const text = guestName;
+                            const x = placeholder.left || 150;
+                            const y = placeholder.top || 300;
+                            const fontSize = placeholder.fontSize || 30;
+                            const fontFamily = placeholder.fontFamily || 'Helvetica';
+                            const fill = placeholder.fill || '#000000';
+
+                            const pdfFont = mapToPDFFont(fontFamily);
+
+                            doc.font(pdfFont).fontSize(fontSize);
+                            const ascenderOffset = ((doc as any)._font.ascender / 1000) * fontSize;
+                            const adjustedY = y - ascenderOffset;
+
+                            doc.fillColor(fill)
+                                .text(text, x, adjustedY, {
+                                    lineBreak: false,
+                                });
+                        }
+                    } else {
+                        // Fallback: place guest name in center
+                        doc.font('Helvetica-Bold')
+                            .fontSize(36)
+                            .fillColor('#000000')
+                            .text(guestName, 0, pageHeight / 2, {
+                                width: pageWidth,
+                                align: 'center',
+                            });
+                    }
+                }
             }
 
             doc.end();
