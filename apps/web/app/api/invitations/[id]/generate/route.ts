@@ -17,9 +17,6 @@ export async function POST(req: Request, { params }: { params: { id: string } })
             return NextResponse.json({ error: 'Invitation not found' }, { status: 404 });
         }
 
-        // Update status to processing
-        await supabaseAdmin.from('invitations').update({ status: 'processing' }).eq('id', id);
-
         // Fetch template
         const { data: template, error: templateError } = await supabaseAdmin
             .from('templates')
@@ -33,31 +30,29 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
         const guestData = Array.isArray(invitation.guests) ? invitation.guests[0] : invitation.guests;
         const guestName = guestData?.name || '';
-        const userId = guestData?.user_id || 'unknown';
 
         try {
             const pdfBuffer = await generatePDF(template, guestName);
-            const pdfPath = `pdfs/${userId}/${invitation.id}.pdf`;
 
-            const { error: uploadError } = await supabaseAdmin.storage
-                .from('assets')
-                .upload(pdfPath, pdfBuffer, {
-                    contentType: 'application/pdf',
-                    upsert: true,
-                });
+            // Build a clean filename: TemplateName_GuestName.pdf
+            const safeName = `${template.name}_${guestName}`
+                .replace(/[^a-zA-Z0-9_\-\u0900-\u097F ]/g, '')
+                .replace(/\s+/g, '_');
 
-            if (uploadError) throw uploadError;
-
-            const { data: { publicUrl } } = supabaseAdmin.storage
-                .from('assets')
-                .getPublicUrl(pdfPath);
-
+            // Update status to completed (no pdf_url since it's a direct download)
             await supabaseAdmin
                 .from('invitations')
-                .update({ status: 'completed', pdf_url: publicUrl })
+                .update({ status: 'completed' })
                 .eq('id', invitation.id);
 
-            return NextResponse.json({ message: 'Generated successfully', url: publicUrl });
+            // Return PDF as a downloadable response
+            return new Response(pdfBuffer, {
+                headers: {
+                    'Content-Type': 'application/pdf',
+                    'Content-Disposition': `attachment; filename="${safeName}.pdf"`,
+                    'Content-Length': pdfBuffer.length.toString(),
+                },
+            });
         } catch (pdfError: any) {
             await supabaseAdmin
                 .from('invitations')

@@ -203,8 +203,32 @@ export default function Invitations() {
     const handleGeneratePdf = async (id: string) => {
         setInvitations(prev => prev.map(inv => inv.id === id ? { ...inv, status: 'processing' } : inv));
         try {
-            const res = await axios.post(`${API_URL}/invitations/${id}/generate`);
-            setInvitations(prev => prev.map(inv => inv.id === id ? { ...inv, status: 'completed', pdfUrl: res.data.url } : inv));
+            const res = await fetch(`${API_URL}/invitations/${id}/generate`, { method: 'POST' });
+            if (!res.ok) {
+                const errData = await res.json();
+                throw new Error(errData.error || 'Generation failed');
+            }
+
+            // Get filename from Content-Disposition header or fallback
+            const disposition = res.headers.get('Content-Disposition');
+            let filename = 'invitation.pdf';
+            if (disposition) {
+                const match = disposition.match(/filename="?(.+?)"?$/);
+                if (match) filename = match[1];
+            }
+
+            // Download the PDF blob directly
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+
+            setInvitations(prev => prev.map(inv => inv.id === id ? { ...inv, status: 'completed' } : inv));
         } catch (err: any) {
             console.error('Failed to generate PDF:', err);
             setInvitations(prev => prev.map(inv => inv.id === id ? { ...inv, status: 'failed' } : inv));
@@ -443,25 +467,19 @@ export default function Invitations() {
 
                                     {/* Actions */}
                                     <div className="flex items-center gap-2 shrink-0">
-                                        {inv.status === 'completed' && inv.pdfUrl ? (
-                                            <a
-                                                href={inv.pdfUrl}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-semibold hover:bg-emerald-100 transition"
-                                            >
-                                                <Download size={13} /> Download
-                                            </a>
-                                        ) : inv.status === 'processing' ? (
+                                        {inv.status === 'processing' ? (
                                             <span className="text-gray-400 text-xs flex items-center gap-1.5 px-3 py-1.5">
                                                 <Loader2 className="animate-spin" size={13} /> Generating...
                                             </span>
                                         ) : (
                                             <button
                                                 onClick={() => handleGeneratePdf(inv.id)}
-                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-50 text-violet-700 rounded-lg text-xs font-semibold hover:bg-violet-100 transition"
+                                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${inv.status === 'completed'
+                                                        ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                                                        : 'bg-violet-50 text-violet-700 hover:bg-violet-100'
+                                                    }`}
                                             >
-                                                <FileText size={13} /> Generate PDF
+                                                <Download size={13} /> {inv.status === 'completed' ? 'Download PDF' : 'Generate PDF'}
                                             </button>
                                         )}
 
