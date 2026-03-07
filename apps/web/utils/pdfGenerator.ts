@@ -2,8 +2,6 @@ import 'regenerator-runtime/runtime';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import sharp from 'sharp';
-import fs from 'fs';
-import path from 'path';
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
     const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
@@ -56,6 +54,9 @@ async function detectImageType(buffer: Buffer): Promise<'png' | 'jpg'> {
     return 'jpg';
 }
 
+// Cache font in memory for subsequent lambda executions
+let cachedDevanagariFont: ArrayBuffer | null = null;
+
 export async function generatePDF(template: any, guestName: string): Promise<Buffer> {
     const config = template.config || {};
     let pageUrls: string[] = [];
@@ -97,9 +98,13 @@ export async function generatePDF(template: any, guestName: string): Promise<Buf
 
     if (isHindi) {
         try {
-            const fontPath = path.join(process.cwd(), 'public', 'fonts', 'NotoSansDevanagari-Regular.ttf');
-            const fontBytes = fs.readFileSync(fontPath);
-            devanagariFont = await pdfDoc.embedFont(fontBytes);
+            if (!cachedDevanagariFont) {
+                const fontUrl = 'https://raw.githubusercontent.com/google/fonts/main/ofl/notosansdevanagari/NotoSansDevanagari%5Bwdth%2Cwght%5D.ttf';
+                const fontRes = await fetch(fontUrl);
+                if (!fontRes.ok) throw new Error(`Font fetch failed: ${fontRes.status}`);
+                cachedDevanagariFont = await fontRes.arrayBuffer();
+            }
+            devanagariFont = await pdfDoc.embedFont(cachedDevanagariFont);
         } catch (fontErr) {
             console.error('Failed to load Devanagari font:', fontErr);
         }
