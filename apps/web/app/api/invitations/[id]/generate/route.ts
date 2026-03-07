@@ -46,7 +46,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
                 .eq('id', invitation.id);
 
             // Return PDF as a downloadable response
-            return new Response(pdfBuffer, {
+            const pdfBytes = new Uint8Array(pdfBuffer);
+            return new Response(pdfBytes, {
                 headers: {
                     'Content-Type': 'application/pdf',
                     'Content-Disposition': `attachment; filename="${safeName}.pdf"`,
