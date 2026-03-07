@@ -1,4 +1,9 @@
+import 'regenerator-runtime/runtime';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import fontkit from '@pdf-lib/fontkit';
+import sharp from 'sharp';
+import fs from 'fs';
+import path from 'path';
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
     const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
@@ -63,14 +68,20 @@ export async function generatePDF(template: any, guestName: string): Promise<Buf
         throw new Error('No template images found');
     }
 
-    // Download all images concurrently
+    // Download all images concurrently and compress them
     const imageBuffers: Buffer[] = await Promise.all(
         pageUrls.map(async (url) => {
             const response = await fetch(url);
             if (!response.ok) {
                 throw new Error(`Failed to download template image: ${response.status}`);
             }
-            return Buffer.from(await response.arrayBuffer());
+            const buffer = Buffer.from(await response.arrayBuffer());
+
+            // Compress the image before embedding (width 1000px matches 2x retina of the 500pt PDF width)
+            return await sharp(buffer)
+                .resize({ width: 1000, withoutEnlargement: true })
+                .jpeg({ quality: 80, force: true }) // Force JPEG for high compression
+                .toBuffer();
         })
     );
 
@@ -78,6 +89,21 @@ export async function generatePDF(template: any, guestName: string): Promise<Buf
     const pageHeight = 700;
 
     const pdfDoc = await PDFDocument.create();
+    pdfDoc.registerFontkit(fontkit);
+
+    const containsHindi = (str: string) => /[\u0900-\u097F]/.test(str);
+    const isHindi = containsHindi(guestName);
+    let devanagariFont: any = null;
+
+    if (isHindi) {
+        try {
+            const fontPath = path.join(process.cwd(), 'public', 'fonts', 'NotoSansDevanagari-Regular.ttf');
+            const fontBytes = fs.readFileSync(fontPath);
+            devanagariFont = await pdfDoc.embedFont(fontBytes);
+        } catch (fontErr) {
+            console.error('Failed to load Devanagari font:', fontErr);
+        }
+    }
 
     for (let i = 0; i < imageBuffers.length; i++) {
         const page = pdfDoc.addPage([pageWidth, pageHeight]);
@@ -123,7 +149,12 @@ export async function generatePDF(template: any, guestName: string): Promise<Buf
                     const fontFamily = placeholder.fontFamily || 'Helvetica';
                     const fill = placeholder.fill || '#000000';
 
-                    const font = await getStandardFont(pdfDoc, fontFamily);
+                    let font;
+                    if (isHindi && devanagariFont) {
+                        font = devanagariFont;
+                    } else {
+                        font = await getStandardFont(pdfDoc, fontFamily);
+                    }
                     const color = hexToRgb(fill);
 
                     // Fabric.js 'top' = distance from canvas top to the top of text bounding box
@@ -141,15 +172,22 @@ export async function generatePDF(template: any, guestName: string): Promise<Buf
                 }
             } else {
                 // Fallback: place guest name in center
-                const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-                const textWidth = font.widthOfTextAtSize(guestName, 36);
+                let font;
+                const fontSize = 36;
+                if (isHindi && devanagariFont) {
+                    font = devanagariFont;
+                } else {
+                    font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+                }
+
+                const textWidth = font.widthOfTextAtSize(guestName, fontSize);
                 const centerX = (pageWidth - textWidth) / 2;
                 const centerY = pageHeight / 2;
 
                 page.drawText(guestName, {
                     x: centerX,
                     y: centerY,
-                    size: 36,
+                    size: fontSize,
                     font: font,
                     color: rgb(0, 0, 0),
                 });
