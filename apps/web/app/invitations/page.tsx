@@ -1,9 +1,11 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { Download, Loader2 } from 'lucide-react';
-import { useSearchParams } from 'next/navigation';
+import { Download, Loader2, FileText, UserPlus, RefreshCw, Trash2, ChevronDown, Search, ArrowRight } from 'lucide-react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
+import AppShell from '../../components/AppShell';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api';
 
@@ -12,6 +14,7 @@ interface Invitation {
     guestName: string;
     status: 'pending' | 'processing' | 'completed' | 'failed';
     pdfUrl?: string;
+    templateId?: string;
 }
 
 interface Template {
@@ -22,17 +25,36 @@ interface Template {
 
 export default function Invitations() {
     const searchParams = useSearchParams();
+    const router = useRouter();
     const [guestName, setGuestName] = useState('');
     const [status, setStatus] = useState('');
+    const [statusType, setStatusType] = useState<'success' | 'error' | ''>('');
     const [invitations, setInvitations] = useState<Invitation[]>([]);
     const [templates, setTemplates] = useState<Template[]>([]);
     const [selectedTemplateId, setSelectedTemplateId] = useState('');
     const [userId, setUserId] = useState('');
+    const [loadingInvitations, setLoadingInvitations] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [checkingAuth, setCheckingAuth] = useState(true);
     const supabase = createClientComponentClient();
 
+    // Check auth
     useEffect(() => {
-        initAuth();
-    }, []);
+        const auth = sessionStorage.getItem('app_authenticated');
+        if (auth === 'true') {
+            setIsAuthenticated(true);
+        } else {
+            router.push('/');
+        }
+        setCheckingAuth(false);
+    }, [router]);
+
+    useEffect(() => {
+        if (isAuthenticated) {
+            initAuth();
+        }
+    }, [isAuthenticated]);
 
     useEffect(() => {
         // Set template from URL query param if available
@@ -41,6 +63,13 @@ export default function Invitations() {
             setSelectedTemplateId(templateIdFromUrl);
         }
     }, [searchParams, selectedTemplateId]);
+
+    // Fetch invitations when template changes
+    useEffect(() => {
+        if (selectedTemplateId && userId) {
+            fetchInvitations(selectedTemplateId);
+        }
+    }, [selectedTemplateId, userId]);
 
     const initAuth = async () => {
         try {
@@ -59,27 +88,34 @@ export default function Invitations() {
             if (user) {
                 setUserId(user.id);
                 fetchTemplates();
-                fetchInvitations();
             }
         } catch (err) {
             console.error('Auth init error:', err);
         }
     };
 
-    const fetchInvitations = async () => {
+    const fetchInvitations = useCallback(async (templateId?: string) => {
+        setLoadingInvitations(true);
         try {
-            const res = await axios.get(`${API_URL}/invitations`);
+            const tId = templateId || selectedTemplateId;
+            const url = tId
+                ? `${API_URL}/invitations?template_id=${tId}`
+                : `${API_URL}/invitations`;
+            const res = await axios.get(url);
             const loaded = res.data.map((inv: any) => ({
                 id: inv.id,
                 guestName: inv.guests?.name || 'Unknown',
                 status: inv.status,
                 pdfUrl: inv.pdf_url || undefined,
+                templateId: inv.template_id,
             }));
             setInvitations(loaded);
         } catch (err) {
             console.error('Failed to fetch invitations:', err);
+        } finally {
+            setLoadingInvitations(false);
         }
-    };
+    }, [selectedTemplateId]);
 
     const fetchTemplates = async () => {
         const { data, error } = await supabase
@@ -89,7 +125,6 @@ export default function Invitations() {
 
         if (!error && data) {
             setTemplates(data);
-            // Auto-select first template if none selected and none from URL
             const templateIdFromUrl = searchParams.get('templateId');
             if (data.length > 0 && !templateIdFromUrl) {
                 setSelectedTemplateId(data[0].id);
@@ -97,22 +132,32 @@ export default function Invitations() {
         }
     };
 
+    const handleTemplateChange = (newTemplateId: string) => {
+        setSelectedTemplateId(newTemplateId);
+        setInvitations([]);
+        setSearchQuery('');
+    };
+
     const handleGenerate = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!selectedTemplateId) {
             setStatus('Please select a template first.');
+            setStatusType('error');
             return;
         }
         if (!userId) {
             setStatus('Not authenticated. Please refresh.');
+            setStatusType('error');
             return;
         }
-        setStatus('Generating...');
+        setStatus('Adding guest...');
+        setStatusType('');
 
         const newInvite: Invitation = {
             id: Date.now().toString(),
             guestName,
-            status: 'pending'
+            status: 'pending',
+            templateId: selectedTemplateId,
         };
         setInvitations(prev => [newInvite, ...prev]);
 
@@ -121,40 +166,45 @@ export default function Invitations() {
                 user_id: userId,
                 template_id: selectedTemplateId,
                 guest_name: guestName,
-                guest_phone: '0000000000' // placeholder for local dev
+                guest_phone: '0000000000'
             });
 
-            setStatus('Invitation created successfully!');
+            setStatus('Guest added! You can generate PDF when ready.');
+            setStatusType('success');
             setGuestName('');
 
-            // Update invitation with real data from API response
             const apiInvitation = res.data.invitation;
             setInvitations(prev => prev.map(inv =>
                 inv.id === newInvite.id
                     ? {
                         ...inv,
-                        status: (apiInvitation.status || 'completed') as Invitation['status'],
+                        id: apiInvitation.id,
+                        status: (apiInvitation.status || 'pending') as Invitation['status'],
                         pdfUrl: apiInvitation.pdf_url || undefined,
                     }
                     : inv
             ));
+
+            // Clear status after 3 seconds
+            setTimeout(() => { setStatus(''); setStatusType(''); }, 3000);
         } catch (err: any) {
             console.error(err);
             const msg = err.response?.data?.error || err.message;
             setStatus('Error: ' + msg);
+            setStatusType('error');
             setInvitations(prev => prev.map(inv =>
                 inv.id === newInvite.id ? { ...inv, status: 'failed' as const } : inv
             ));
         }
     };
 
-    const handleRegenerate = async (id: string) => {
+    const handleGeneratePdf = async (id: string) => {
         setInvitations(prev => prev.map(inv => inv.id === id ? { ...inv, status: 'processing' } : inv));
         try {
             const res = await axios.post(`${API_URL}/invitations/${id}/generate`);
             setInvitations(prev => prev.map(inv => inv.id === id ? { ...inv, status: 'completed', pdfUrl: res.data.url } : inv));
         } catch (err: any) {
-            console.error('Failed to regenerate:', err);
+            console.error('Failed to generate PDF:', err);
             setInvitations(prev => prev.map(inv => inv.id === id ? { ...inv, status: 'failed' } : inv));
         }
     };
@@ -169,118 +219,274 @@ export default function Invitations() {
         }
     };
 
-    return (
-        <div className="max-w-4xl mx-auto p-6">
-            <div className="bg-white p-6 rounded-lg shadow-sm border mb-8">
-                <h2 className="text-xl font-bold mb-4">Generate Invitation</h2>
+    const selectedTemplate = templates.find(t => t.id === selectedTemplateId);
 
-                {/* Template Selection */}
-                <div className="mb-4">
-                    <label className="block text-sm font-medium mb-1">Select Template</label>
-                    {templates.length === 0 ? (
-                        <p className="text-sm text-gray-400">No templates found. <a href="/templates/new" className="text-blue-600 underline">Create one first</a>.</p>
-                    ) : (
-                        <select
-                            className="w-full border rounded p-2 text-sm"
-                            value={selectedTemplateId}
-                            onChange={(e) => setSelectedTemplateId(e.target.value)}
+    // Filter invitations by search query
+    const filteredInvitations = invitations.filter(inv =>
+        inv.guestName.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
+    const pendingCount = invitations.filter(i => i.status === 'pending').length;
+    const completedCount = invitations.filter(i => i.status === 'completed').length;
+
+    if (checkingAuth || !isAuthenticated) {
+        return (
+            <div className="flex items-center justify-center min-h-[60vh]">
+                <Loader2 className="animate-spin text-violet-500" size={32} />
+            </div>
+        );
+    }
+
+    return (
+        <AppShell>
+            <div className="max-w-5xl mx-auto animate-fadeIn">
+                {/* Header */}
+                <div className="flex items-center justify-between mb-8">
+                    <div>
+                        <h1 className="text-2xl font-bold text-gray-800">Invitations</h1>
+                        <p className="text-sm text-gray-400 mt-1">Add guests and generate personalized PDFs</p>
+                    </div>
+                    <Link href="/" className="btn-secondary text-xs flex items-center gap-1.5">
+                        ← Back to Dashboard
+                    </Link>
+                </div>
+
+                {/* Generate form */}
+                <div className="glass-card p-6 rounded-2xl mb-8 animate-slideUp">
+                    <h2 className="text-lg font-bold text-gray-800 mb-5 flex items-center gap-2">
+                        <UserPlus size={20} className="text-violet-500" />
+                        Add Guest
+                    </h2>
+
+                    {/* Template Selection */}
+                    <div className="mb-5">
+                        <label className="block text-sm font-semibold text-gray-600 mb-2">Select Template</label>
+                        {templates.length === 0 ? (
+                            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-700 flex items-center gap-2">
+                                <span>⚠️</span>
+                                No templates found.
+                                <Link href="/templates/new" className="underline font-semibold hover:no-underline">
+                                    Create one first
+                                </Link>
+                            </div>
+                        ) : (
+                            <div className="relative">
+                                <select
+                                    className="input-field appearance-none pr-10 font-medium"
+                                    value={selectedTemplateId}
+                                    onChange={(e) => handleTemplateChange(e.target.value)}
+                                >
+                                    <option value="">-- Select a template --</option>
+                                    {templates.map((t) => (
+                                        <option key={t.id} value={t.id}>{t.name}</option>
+                                    ))}
+                                </select>
+                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={16} />
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Selected template preview */}
+                    {selectedTemplate && (
+                        <div className="flex items-center gap-3 mb-5 p-3 bg-violet-50/50 rounded-xl border border-violet-100">
+                            <img
+                                src={selectedTemplate.front_image_url}
+                                alt={selectedTemplate.name}
+                                className="w-12 h-16 object-cover rounded-lg shadow-sm"
+                            />
+                            <div className="flex-1">
+                                <p className="text-sm font-semibold text-gray-800">{selectedTemplate.name}</p>
+                                <p className="text-xs text-gray-400">Selected template</p>
+                            </div>
+                            <div className="flex gap-3 text-xs">
+                                <span className="bg-white px-3 py-1 rounded-full text-violet-600 font-semibold border border-violet-100">
+                                    {completedCount} generated
+                                </span>
+                                {pendingCount > 0 && (
+                                    <span className="bg-white px-3 py-1 rounded-full text-amber-600 font-semibold border border-amber-100">
+                                        {pendingCount} pending
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    <form onSubmit={handleGenerate} className="flex gap-3 items-end">
+                        <div className="flex-1">
+                            <label className="block text-sm font-semibold text-gray-600 mb-2">Guest Name</label>
+                            <input
+                                type="text"
+                                className="input-field"
+                                placeholder="e.g. Shri Ram & Family"
+                                value={guestName}
+                                onChange={(e) => setGuestName(e.target.value)}
+                                required
+                            />
+                        </div>
+                        <button
+                            type="submit"
+                            disabled={!selectedTemplateId || !guestName.trim()}
+                            className="btn-primary flex items-center gap-2 py-2.5 whitespace-nowrap"
                         >
-                            <option value="">-- Select a template --</option>
-                            {templates.map((t) => (
-                                <option key={t.id} value={t.id}>{t.name}</option>
-                            ))}
-                        </select>
+                            <UserPlus size={16} /> Add Guest
+                        </button>
+                    </form>
+
+                    {status && (
+                        <div className={`mt-4 px-4 py-3 rounded-xl text-sm font-medium flex items-center gap-2 animate-fadeIn ${statusType === 'success'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : statusType === 'error'
+                                ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                : 'bg-gray-50 text-gray-600 border border-gray-200'
+                            }`}>
+                            {statusType === 'success' && <span>✓</span>}
+                            {statusType === 'error' && <span>✕</span>}
+                            {!statusType && <Loader2 className="animate-spin" size={14} />}
+                            {status}
+                        </div>
                     )}
                 </div>
 
-                <form onSubmit={handleGenerate} className="flex gap-4 items-end">
-                    <div className="flex-1">
-                        <label className="block text-sm font-medium mb-1">Guest Name</label>
-                        <input
-                            type="text"
-                            className="w-full border p-2 rounded"
-                            value={guestName}
-                            onChange={(e) => setGuestName(e.target.value)}
-                            required
-                        />
+                {/* Invitations List */}
+                <div className="glass-card rounded-2xl overflow-hidden animate-slideUp" style={{ animationDelay: '0.1s' }}>
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-5 border-b border-gray-100 gap-3">
+                        <div>
+                            <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                                <FileText size={18} className="text-violet-500" />
+                                Guest List
+                                {selectedTemplate && (
+                                    <span className="text-xs font-normal text-gray-400 ml-1">
+                                        for &quot;{selectedTemplate.name}&quot;
+                                    </span>
+                                )}
+                            </h3>
+                        </div>
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                            {invitations.length > 0 && (
+                                <div className="relative flex-1 sm:flex-initial">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300" size={14} />
+                                    <input
+                                        type="text"
+                                        className="input-field pl-8 py-1.5 text-xs w-full sm:w-48"
+                                        placeholder="Search guests..."
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                    />
+                                </div>
+                            )}
+                            <button
+                                onClick={() => fetchInvitations()}
+                                className="p-2 text-gray-400 hover:text-violet-600 hover:bg-violet-50 rounded-lg transition"
+                                title="Refresh"
+                            >
+                                <RefreshCw size={16} />
+                            </button>
+                        </div>
                     </div>
-                    <button
-                        type="submit"
-                        disabled={!selectedTemplateId}
-                        className="bg-black text-white px-6 py-2 rounded hover:bg-gray-800 disabled:bg-gray-400"
-                    >
-                        Generate PDF
-                    </button>
-                </form>
-                {status && <p className="mt-2 text-sm text-gray-500">{status}</p>}
-            </div>
 
-            <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
-                <h3 className="text-lg font-bold p-6 border-b">Recent Invitations</h3>
-                <table className="w-full text-left">
-                    <thead className="bg-gray-50">
-                        <tr>
-                            <th className="p-4">Guest Name</th>
-                            <th className="p-4">Status</th>
-                            <th className="p-4">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {invitations.length === 0 && (
-                            <tr>
-                                <td colSpan={3} className="p-8 text-center text-gray-400">No invitations generated yet.</td>
-                            </tr>
-                        )}
-                        {invitations.map((inv) => (
-                            <tr key={inv.id} className="border-t">
-                                <td className="p-4">{inv.guestName}</td>
-                                <td className="p-4">
-                                    <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-bold capitalize
-                                    ${inv.status === 'completed' ? 'bg-green-100 text-green-800' :
-                                            inv.status === 'failed' ? 'bg-red-100 text-red-800' :
-                                                'bg-yellow-100 text-yellow-800'}`}>
+                    {!selectedTemplateId ? (
+                        <div className="p-16 text-center">
+                            <div className="w-16 h-16 rounded-2xl bg-gray-50 flex items-center justify-center mx-auto mb-4">
+                                <FileText className="text-gray-300" size={28} />
+                            </div>
+                            <p className="text-gray-400 text-sm mb-1">Select a template to view guests</p>
+                            <p className="text-gray-300 text-xs">Choose a template from the dropdown above</p>
+                        </div>
+                    ) : loadingInvitations ? (
+                        <div className="p-16 text-center">
+                            <Loader2 className="animate-spin text-violet-400 mx-auto mb-3" size={24} />
+                            <p className="text-gray-400 text-sm">Loading guests...</p>
+                        </div>
+                    ) : filteredInvitations.length === 0 ? (
+                        <div className="p-16 text-center">
+                            <div className="w-16 h-16 rounded-2xl bg-gray-50 flex items-center justify-center mx-auto mb-4">
+                                <UserPlus className="text-gray-300" size={28} />
+                            </div>
+                            <p className="text-gray-400 text-sm mb-1">
+                                {searchQuery ? 'No guests matching your search' : 'No guests added yet'}
+                            </p>
+                            {!searchQuery && (
+                                <p className="text-gray-300 text-xs">Add a guest name above to get started</p>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="divide-y divide-gray-50">
+                            {filteredInvitations.map((inv, index) => (
+                                <div
+                                    key={inv.id}
+                                    className="flex items-center gap-4 p-4 hover:bg-violet-50/30 transition group animate-fadeIn"
+                                    style={{ animationDelay: `${index * 0.03}s` }}
+                                >
+                                    {/* Guest avatar */}
+                                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-100 to-purple-100 flex items-center justify-center shrink-0">
+                                        <span className="text-sm font-bold text-violet-600">
+                                            {inv.guestName.charAt(0).toUpperCase()}
+                                        </span>
+                                    </div>
+
+                                    {/* Guest name */}
+                                    <div className="flex-1 min-w-0">
+                                        <p className="font-semibold text-gray-800 text-sm truncate">{inv.guestName}</p>
+                                    </div>
+
+                                    {/* Status badge */}
+                                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold capitalize shrink-0
+                                    ${inv.status === 'completed' ? 'badge-completed' :
+                                            inv.status === 'failed' ? 'badge-failed' :
+                                                inv.status === 'processing' ? 'badge-processing' :
+                                                    'badge-pending'}`}>
+                                        {inv.status === 'processing' && <Loader2 className="animate-spin mr-1" size={10} />}
                                         {inv.status}
                                     </span>
-                                </td>
-                                <td className="p-4">
-                                    <div className="flex items-center gap-4">
+
+                                    {/* Actions */}
+                                    <div className="flex items-center gap-2 shrink-0">
                                         {inv.status === 'completed' && inv.pdfUrl ? (
                                             <a
                                                 href={inv.pdfUrl}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
-                                                className="text-blue-600 hover:text-blue-800 flex items-center gap-1 font-medium shrink-0"
+                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-semibold hover:bg-emerald-100 transition"
                                             >
-                                                <Download size={16} /> Download
+                                                <Download size={13} /> Download
                                             </a>
-                                        ) : (inv.status === 'processing' || inv.status === 'pending') ? (
-                                            <span className="text-gray-400 text-sm flex items-center gap-1 shrink-0">
-                                                <Loader2 className="animate-spin" size={16} /> Processing
+                                        ) : inv.status === 'processing' ? (
+                                            <span className="text-gray-400 text-xs flex items-center gap-1.5 px-3 py-1.5">
+                                                <Loader2 className="animate-spin" size={13} /> Generating...
                                             </span>
                                         ) : (
                                             <button
-                                                onClick={() => handleRegenerate(inv.id)}
-                                                className="text-blue-600 hover:text-blue-800 text-sm font-medium shrink-0"
+                                                onClick={() => handleGeneratePdf(inv.id)}
+                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-50 text-violet-700 rounded-lg text-xs font-semibold hover:bg-violet-100 transition"
                                             >
-                                                Generate PDF
+                                                <FileText size={13} /> Generate PDF
                                             </button>
                                         )}
 
-                                        {!(inv.status === 'processing' || inv.status === 'pending') && (
+                                        {!(inv.status === 'processing') && (
                                             <button
                                                 onClick={() => handleDelete(inv.id)}
-                                                className="text-red-500 hover:text-red-700 text-sm shrink-0"
+                                                className="p-1.5 text-gray-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition opacity-0 group-hover:opacity-100"
+                                                title="Delete"
                                             >
-                                                Delete
+                                                <Trash2 size={14} />
                                             </button>
                                         )}
                                     </div>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Footer summary */}
+                    {filteredInvitations.length > 0 && (
+                        <div className="p-4 border-t border-gray-50 bg-gray-50/50 flex items-center justify-between text-xs text-gray-400">
+                            <span>{filteredInvitations.length} guest{filteredInvitations.length !== 1 ? 's' : ''}</span>
+                            <span>{completedCount} PDF{completedCount !== 1 ? 's' : ''} generated</span>
+                        </div>
+                    )}
+                </div>
             </div>
-        </div>
+        </AppShell>
     );
 }

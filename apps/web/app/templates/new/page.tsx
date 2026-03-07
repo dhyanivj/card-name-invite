@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter, useSearchParams } from 'next/navigation';
+import AppShell from '../../../components/AppShell';
 
 export default function NewTemplate() {
     const router = useRouter();
@@ -451,139 +452,141 @@ export default function NewTemplate() {
     };
 
     return (
-        <div className="flex flex-col md:flex-row gap-6 max-w-6xl mx-auto">
-            {/* Left Sidebar */}
-            <div className="w-full md:w-1/3 space-y-4">
-                <div className="bg-white p-6 rounded-lg shadow-sm border">
-                    <h3 className="font-bold text-lg mb-4">
-                        {editingId ? 'Edit Template' : 'Template Settings'}
-                    </h3>
-                    <div className="space-y-4">
-                        <div>
-                            <label className="block text-sm font-medium mb-1">Template Name</label>
-                            <input
-                                type="text"
-                                className="w-full border rounded p-2 text-sm"
-                                placeholder="My Wedding Template"
-                                value={templateName}
-                                onChange={(e) => setTemplateName(e.target.value)}
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium mb-1">
-                                Template Pages
-                            </label>
-                            <input
-                                type="file"
-                                onChange={handleImageUpload}
-                                accept="image/*"
-                                multiple
-                                className="text-sm w-full mb-3"
-                            />
-                            {pages.length > 0 && (
-                                <div className="space-y-2 border rounded p-3 bg-gray-50 max-h-60 overflow-y-auto">
-                                    {pages.map((p, index) => (
-                                        <div key={p.id} className="flex items-center gap-3 bg-white p-2 rounded shadow-sm border">
-                                            <span className="text-xs font-bold text-gray-400 w-4">{index + 1}</span>
-                                            <img src={p.preview} alt={`Page ${index + 1}`} className="w-10 h-14 object-cover rounded bg-gray-100" />
-                                            <div className="flex-1"></div>
-                                            <div className="flex flex-col gap-1">
-                                                <button onClick={() => movePageUp(index)} disabled={index === 0} className="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded disabled:opacity-50">↑</button>
-                                                <button onClick={() => movePageDown(index)} disabled={index === pages.length - 1} className="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded disabled:opacity-50">↓</button>
+        <AppShell>
+            <div className="flex flex-col md:flex-row gap-6 max-w-6xl mx-auto">
+                {/* Left Sidebar */}
+                <div className="w-full md:w-1/3 space-y-4">
+                    <div className="bg-white p-6 rounded-lg shadow-sm border">
+                        <h3 className="font-bold text-lg mb-4">
+                            {editingId ? 'Edit Template' : 'Template Settings'}
+                        </h3>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium mb-1">Template Name</label>
+                                <input
+                                    type="text"
+                                    className="w-full border rounded p-2 text-sm"
+                                    placeholder="My Wedding Template"
+                                    value={templateName}
+                                    onChange={(e) => setTemplateName(e.target.value)}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium mb-1">
+                                    Template Pages
+                                </label>
+                                <input
+                                    type="file"
+                                    onChange={handleImageUpload}
+                                    accept="image/*"
+                                    multiple
+                                    className="text-sm w-full mb-3"
+                                />
+                                {pages.length > 0 && (
+                                    <div className="space-y-2 border rounded p-3 bg-gray-50 max-h-60 overflow-y-auto">
+                                        {pages.map((p, index) => (
+                                            <div key={p.id} className="flex items-center gap-3 bg-white p-2 rounded shadow-sm border">
+                                                <span className="text-xs font-bold text-gray-400 w-4">{index + 1}</span>
+                                                <img src={p.preview} alt={`Page ${index + 1}`} className="w-10 h-14 object-cover rounded bg-gray-100" />
+                                                <div className="flex-1"></div>
+                                                <div className="flex flex-col gap-1">
+                                                    <button onClick={() => movePageUp(index)} disabled={index === 0} className="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded disabled:opacity-50">↑</button>
+                                                    <button onClick={() => movePageDown(index)} disabled={index === pages.length - 1} className="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded disabled:opacity-50">↓</button>
+                                                </div>
+                                                <button onClick={() => removePage(index)} className="text-red-500 hover:bg-red-50 px-2 py-1 rounded">✕</button>
                                             </div>
-                                            <button onClick={() => removePage(index)} className="text-red-500 hover:bg-red-50 px-2 py-1 rounded">✕</button>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                <div className="bg-white p-6 rounded-lg shadow-sm border">
-                    <h3 className="font-bold text-lg mb-4">Text Controls</h3>
+                    <div className="bg-white p-6 rounded-lg shadow-sm border">
+                        <h3 className="font-bold text-lg mb-4">Text Controls</h3>
+                        <button
+                            onClick={addTextPlaceholder}
+                            className="bg-gray-100 border border-gray-300 px-4 py-2 rounded hover:bg-gray-200 w-full text-sm font-semibold mb-4"
+                        >
+                            + Add Guest Name Placeholder
+                        </button>
+
+                        {selectedProps ? (
+                            <div className="space-y-4 pt-4 border-t">
+                                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+                                    Selected Text Style
+                                </h4>
+                                <div>
+                                    <label className="block text-xs font-medium mb-1">Font Family</label>
+                                    <select
+                                        className="w-full border rounded p-2 text-sm"
+                                        value={selectedProps.fontFamily}
+                                        onChange={(e) => updateSelectedProp('fontFamily', e.target.value)}
+                                    >
+                                        <option value="Arial">Arial</option>
+                                        <option value="Times New Roman">Times New Roman</option>
+                                        <option value="Courier New">Courier New</option>
+                                        <option value="Georgia">Georgia</option>
+                                        <option value="Verdana">Verdana</option>
+                                        <option value="cursive">Cursive</option>
+                                        <option value="Impact">Impact</option>
+                                        <option value="Comic Sans MS">Comic Sans MS</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium mb-1">Font Size</label>
+                                    <input
+                                        type="number"
+                                        min={8}
+                                        max={200}
+                                        className="w-full border rounded p-2 text-sm"
+                                        value={selectedProps.fontSize}
+                                        onChange={(e) => {
+                                            const val = parseInt(e.target.value);
+                                            if (!isNaN(val) && val > 0) {
+                                                updateSelectedProp('fontSize', val);
+                                            }
+                                        }}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium mb-1">Text Color</label>
+                                    <input
+                                        type="color"
+                                        className="w-full h-10 border rounded cursor-pointer"
+                                        value={selectedProps.fill}
+                                        onChange={(e) => updateSelectedProp('fill', e.target.value)}
+                                    />
+                                </div>
+                            </div>
+                        ) : (
+                            <p className="text-xs text-gray-400 pt-4 border-t text-center">
+                                Click a text on the canvas to edit its style.
+                            </p>
+                        )}
+                    </div>
+
                     <button
-                        onClick={addTextPlaceholder}
-                        className="bg-gray-100 border border-gray-300 px-4 py-2 rounded hover:bg-gray-200 w-full text-sm font-semibold mb-4"
+                        onClick={saveTemplate}
+                        disabled={saving}
+                        className="bg-black text-white w-full py-4 rounded-lg font-bold hover:bg-gray-800 transition disabled:bg-gray-400 shadow-md"
                     >
-                        + Add Guest Name Placeholder
+                        {saving ? 'Saving...' : editingId ? 'Update Template' : 'Save Template'}
                     </button>
-
-                    {selectedProps ? (
-                        <div className="space-y-4 pt-4 border-t">
-                            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-                                Selected Text Style
-                            </h4>
-                            <div>
-                                <label className="block text-xs font-medium mb-1">Font Family</label>
-                                <select
-                                    className="w-full border rounded p-2 text-sm"
-                                    value={selectedProps.fontFamily}
-                                    onChange={(e) => updateSelectedProp('fontFamily', e.target.value)}
-                                >
-                                    <option value="Arial">Arial</option>
-                                    <option value="Times New Roman">Times New Roman</option>
-                                    <option value="Courier New">Courier New</option>
-                                    <option value="Georgia">Georgia</option>
-                                    <option value="Verdana">Verdana</option>
-                                    <option value="cursive">Cursive</option>
-                                    <option value="Impact">Impact</option>
-                                    <option value="Comic Sans MS">Comic Sans MS</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-xs font-medium mb-1">Font Size</label>
-                                <input
-                                    type="number"
-                                    min={8}
-                                    max={200}
-                                    className="w-full border rounded p-2 text-sm"
-                                    value={selectedProps.fontSize}
-                                    onChange={(e) => {
-                                        const val = parseInt(e.target.value);
-                                        if (!isNaN(val) && val > 0) {
-                                            updateSelectedProp('fontSize', val);
-                                        }
-                                    }}
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-medium mb-1">Text Color</label>
-                                <input
-                                    type="color"
-                                    className="w-full h-10 border rounded cursor-pointer"
-                                    value={selectedProps.fill}
-                                    onChange={(e) => updateSelectedProp('fill', e.target.value)}
-                                />
-                            </div>
-                        </div>
-                    ) : (
-                        <p className="text-xs text-gray-400 pt-4 border-t text-center">
-                            Click a text on the canvas to edit its style.
-                        </p>
-                    )}
                 </div>
 
-                <button
-                    onClick={saveTemplate}
-                    disabled={saving}
-                    className="bg-black text-white w-full py-4 rounded-lg font-bold hover:bg-gray-800 transition disabled:bg-gray-400 shadow-md"
-                >
-                    {saving ? 'Saving...' : editingId ? 'Update Template' : 'Save Template'}
-                </button>
+                {/* Canvas Area */}
+                <div className="flex-1">
+                    <p className="text-xs text-gray-400 mb-4 uppercase font-bold tracking-widest text-center">
+                        Canvas Preview — Click text to select, drag to move
+                    </p>
+                    <div
+                        ref={canvasContainerRef}
+                        style={{ width: 500, height: 700 }}
+                        className="mx-auto shadow-2xl border"
+                    />
+                </div>
             </div>
-
-            {/* Canvas Area */}
-            <div className="flex-1">
-                <p className="text-xs text-gray-400 mb-4 uppercase font-bold tracking-widest text-center">
-                    Canvas Preview — Click text to select, drag to move
-                </p>
-                <div
-                    ref={canvasContainerRef}
-                    style={{ width: 500, height: 700 }}
-                    className="mx-auto shadow-2xl border"
-                />
-            </div>
-        </div>
+        </AppShell>
     );
 }
