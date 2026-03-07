@@ -126,8 +126,11 @@ export async function generatePDF(template: any, guestName: string): Promise<Buf
                     const font = await getStandardFont(pdfDoc, fontFamily);
                     const color = hexToRgb(fill);
 
-                    // pdf-lib uses bottom-left origin, so convert from top-left origin
-                    const pdfY = pageHeight - y - fontSize;
+                    // Fabric.js 'top' = distance from canvas top to the top of text bounding box
+                    // pdf-lib 'y' = distance from page bottom to the text baseline
+                    // ascent = distance from baseline to top of text ≈ fontSize * 0.72 for standard fonts
+                    const ascent = font.heightAtSize(fontSize, { descender: false });
+                    const pdfY = pageHeight - y - ascent;
 
                     page.drawText(text, {
                         x: x,
