@@ -105,7 +105,9 @@ export default function Invitations() {
             const loaded = res.data.map((inv: any) => ({
                 id: inv.id,
                 guestName: inv.guests?.name || 'Unknown',
-                status: inv.status,
+                // Normalize stale 'processing' status to 'pending' — 
+                // processing is only set client-side when user clicks "Generate PDF"
+                status: inv.status === 'processing' ? 'pending' : inv.status,
                 pdfUrl: inv.pdf_url || undefined,
                 templateId: inv.template_id,
             }));
