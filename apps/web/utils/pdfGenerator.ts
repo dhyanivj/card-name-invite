@@ -128,9 +128,8 @@ export async function generatePDF(template: any, guestName: string): Promise<Buf
 
                     // Fabric.js 'top' = distance from canvas top to the top of text bounding box
                     // pdf-lib 'y' = distance from page bottom to the text baseline
-                    // ascent = distance from baseline to top of text ≈ fontSize * 0.72 for standard fonts
-                    const ascent = font.heightAtSize(fontSize, { descender: false });
-                    const pdfY = pageHeight - y - ascent;
+                    // The baseline sits at approximately (top + fontSize) from the canvas top
+                    const pdfY = pageHeight - y - fontSize;
 
                     page.drawText(text, {
                         x: x,
