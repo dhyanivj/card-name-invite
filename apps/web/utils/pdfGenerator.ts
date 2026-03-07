@@ -1,4 +1,55 @@
-import PDFDocument from 'pdfkit';
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    if (result) {
+        return {
+            r: parseInt(result[1], 16) / 255,
+            g: parseInt(result[2], 16) / 255,
+            b: parseInt(result[3], 16) / 255,
+        };
+    }
+    return { r: 0, g: 0, b: 0 };
+}
+
+async function getStandardFont(pdfDoc: PDFDocument, fontFamily: string) {
+    const fontMap: Record<string, string> = {
+        'Arial': 'Helvetica',
+        'Helvetica': 'Helvetica',
+        'Helvetica-Bold': 'HelveticaBold',
+        'Times New Roman': 'TimesRoman',
+        'Times-Roman': 'TimesRoman',
+        'Georgia': 'TimesRoman',
+        'Courier New': 'Courier',
+        'Courier': 'Courier',
+        'Verdana': 'Helvetica',
+        'Impact': 'HelveticaBold',
+        'Comic Sans MS': 'Helvetica',
+        'cursive': 'TimesRomanItalic',
+        'Times-Italic': 'TimesRomanItalic',
+    };
+
+    const fontKey = fontMap[fontFamily] || 'Helvetica';
+
+    const standardFontMap: Record<string, typeof StandardFonts[keyof typeof StandardFonts]> = {
+        'Helvetica': StandardFonts.Helvetica,
+        'HelveticaBold': StandardFonts.HelveticaBold,
+        'TimesRoman': StandardFonts.TimesRoman,
+        'TimesRomanItalic': StandardFonts.TimesRomanItalic,
+        'Courier': StandardFonts.Courier,
+    };
+
+    return pdfDoc.embedFont(standardFontMap[fontKey] || StandardFonts.Helvetica);
+}
+
+async function detectImageType(buffer: Buffer): Promise<'png' | 'jpg'> {
+    // Check PNG magic bytes
+    if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) {
+        return 'png';
+    }
+    // Default to jpg
+    return 'jpg';
+}
 
 export async function generatePDF(template: any, guestName: string): Promise<Buffer> {
     const config = template.config || {};
@@ -23,81 +74,89 @@ export async function generatePDF(template: any, guestName: string): Promise<Buf
         })
     );
 
-    // Create PDF
-    return new Promise<Buffer>((resolve, reject) => {
+    const pageWidth = 500;
+    const pageHeight = 700;
+
+    const pdfDoc = await PDFDocument.create();
+
+    for (let i = 0; i < imageBuffers.length; i++) {
+        const page = pdfDoc.addPage([pageWidth, pageHeight]);
+
+        // Embed and draw background image
         try {
-            // Use A4-ish portrait dimensions (in points: 1pt = 1/72 inch)
-            const pageWidth = 500;
-            const pageHeight = 700;
+            const imgType = await detectImageType(imageBuffers[i]);
+            let embeddedImage;
 
-            const doc = new PDFDocument({
-                size: [pageWidth, pageHeight],
-                margin: 0,
-            });
-
-            const chunks: Buffer[] = [];
-            doc.on('data', (chunk: Buffer) => chunks.push(chunk));
-            doc.on('end', () => resolve(Buffer.concat(chunks)));
-            doc.on('error', reject);
-
-            for (let i = 0; i < imageBuffers.length; i++) {
-                if (i > 0) {
-                    doc.addPage({ size: [pageWidth, pageHeight], margin: 0 });
-                }
-
-                // Draw background image
-                try {
-                    doc.image(imageBuffers[i], 0, 0, {
-                        width: pageWidth,
-                        height: pageHeight,
-                    });
-                } catch (imgErr) {
-                    console.error(`Image embed error on page ${i}, using plain background:`, imgErr);
-                    doc.rect(0, 0, pageWidth, pageHeight).fill('#f5f5f5');
-                }
-
-                // Overlay text placeholders from config ONLY on the first page
-                if (i === 0) {
-                    const placeholders = config.placeholders || [];
-
-                    if (placeholders.length > 0) {
-                        for (const placeholder of placeholders) {
-                            const text = guestName;
-                            const x = placeholder.left || 150;
-                            const y = placeholder.top || 300;
-                            const fontSize = placeholder.fontSize || 30;
-                            const fontFamily = placeholder.fontFamily || 'Helvetica';
-                            const fill = placeholder.fill || '#000000';
-
-                            const pdfFont = mapToPDFFont(fontFamily);
-
-                            doc.font(pdfFont).fontSize(fontSize);
-                            const ascenderOffset = ((doc as any)._font.ascender / 1000) * fontSize;
-                            const adjustedY = y - ascenderOffset;
-
-                            doc.fillColor(fill)
-                                .text(text, x, adjustedY, {
-                                    lineBreak: false,
-                                });
-                        }
-                    } else {
-                        // Fallback: place guest name in center
-                        doc.font('Helvetica-Bold')
-                            .fontSize(36)
-                            .fillColor('#000000')
-                            .text(guestName, 0, pageHeight / 2, {
-                                width: pageWidth,
-                                align: 'center',
-                            });
-                    }
-                }
+            if (imgType === 'png') {
+                embeddedImage = await pdfDoc.embedPng(imageBuffers[i]);
+            } else {
+                embeddedImage = await pdfDoc.embedJpg(imageBuffers[i]);
             }
 
-            doc.end();
-        } catch (err) {
-            reject(err);
+            page.drawImage(embeddedImage, {
+                x: 0,
+                y: 0,
+                width: pageWidth,
+                height: pageHeight,
+            });
+        } catch (imgErr) {
+            console.error(`Image embed error on page ${i}, using plain background:`, imgErr);
+            page.drawRectangle({
+                x: 0,
+                y: 0,
+                width: pageWidth,
+                height: pageHeight,
+                color: rgb(0.96, 0.96, 0.96),
+            });
         }
-    });
+
+        // Overlay text placeholders ONLY on the first page
+        if (i === 0) {
+            const placeholders = config.placeholders || [];
+
+            if (placeholders.length > 0) {
+                for (const placeholder of placeholders) {
+                    const text = guestName;
+                    const x = placeholder.left || 150;
+                    const y = placeholder.top || 300;
+                    const fontSize = placeholder.fontSize || 30;
+                    const fontFamily = placeholder.fontFamily || 'Helvetica';
+                    const fill = placeholder.fill || '#000000';
+
+                    const font = await getStandardFont(pdfDoc, fontFamily);
+                    const color = hexToRgb(fill);
+
+                    // pdf-lib uses bottom-left origin, so convert from top-left origin
+                    const pdfY = pageHeight - y - fontSize;
+
+                    page.drawText(text, {
+                        x: x,
+                        y: pdfY,
+                        size: fontSize,
+                        font: font,
+                        color: rgb(color.r, color.g, color.b),
+                    });
+                }
+            } else {
+                // Fallback: place guest name in center
+                const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+                const textWidth = font.widthOfTextAtSize(guestName, 36);
+                const centerX = (pageWidth - textWidth) / 2;
+                const centerY = pageHeight / 2;
+
+                page.drawText(guestName, {
+                    x: centerX,
+                    y: centerY,
+                    size: 36,
+                    font: font,
+                    color: rgb(0, 0, 0),
+                });
+            }
+        }
+    }
+
+    const pdfBytes = await pdfDoc.save();
+    return Buffer.from(pdfBytes);
 }
 
 export function mapToPDFFont(webFont: string): string {
