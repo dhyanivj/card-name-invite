@@ -83,7 +83,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 {children}
             </main>
             <footer className="text-center py-4 text-xs text-gray-400 border-t border-gray-100">
-                WeddingInviter &copy; 2026
+                WeddingInviter &copy; 2026 Created by Vijay Dhyani
             </footer>
         </div>
     );

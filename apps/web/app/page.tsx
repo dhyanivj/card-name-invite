@@ -185,7 +185,7 @@ export default function Home() {
                     </form>
 
                     <p className="text-center text-purple-300/30 text-xs mt-8">
-                        WeddingInviter &copy; 2026
+                        WeddingInviter &copy; 2026 Created by Vijay Dhyani
                     </p>
                 </div>
             </div>
