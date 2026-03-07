@@ -337,12 +337,12 @@ export default function Invitations() {
                         </div>
                     )}
 
-                    <form onSubmit={handleGenerate} className="flex gap-3 items-end">
-                        <div className="flex-1">
+                    <form onSubmit={handleGenerate} className="flex flex-col sm:flex-row gap-3 sm:items-end">
+                        <div className="w-full sm:flex-1">
                             <label className="block text-sm font-semibold text-gray-600 mb-2">Guest Name</label>
                             <input
                                 type="text"
-                                className="input-field"
+                                className="input-field w-full"
                                 placeholder="e.g. Shri Ram & Family"
                                 value={guestName}
                                 onChange={(e) => setGuestName(e.target.value)}
@@ -352,7 +352,7 @@ export default function Invitations() {
                         <button
                             type="submit"
                             disabled={!selectedTemplateId || !guestName.trim()}
-                            className="btn-primary flex items-center gap-2 py-2.5 whitespace-nowrap"
+                            className="btn-primary w-full sm:w-auto flex justify-center items-center gap-2 py-2.5 sm:whitespace-nowrap"
                         >
                             <UserPlus size={16} /> Add Guest
                         </button>
@@ -440,58 +440,63 @@ export default function Invitations() {
                             {filteredInvitations.map((inv, index) => (
                                 <div
                                     key={inv.id}
-                                    className="flex items-center gap-4 p-4 hover:bg-violet-50/30 transition group animate-fadeIn"
+                                    className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 p-4 hover:bg-violet-50/30 transition group animate-fadeIn"
                                     style={{ animationDelay: `${index * 0.03}s` }}
                                 >
-                                    {/* Guest avatar */}
-                                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-100 to-purple-100 flex items-center justify-center shrink-0">
-                                        <span className="text-sm font-bold text-violet-600">
-                                            {inv.guestName.charAt(0).toUpperCase()}
-                                        </span>
-                                    </div>
-
-                                    {/* Guest name */}
-                                    <div className="flex-1 min-w-0">
-                                        <p className="font-semibold text-gray-800 text-sm truncate">{inv.guestName}</p>
-                                    </div>
-
-                                    {/* Status badge */}
-                                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold capitalize shrink-0
-                                    ${inv.status === 'completed' ? 'badge-completed' :
-                                            inv.status === 'failed' ? 'badge-failed' :
-                                                inv.status === 'processing' ? 'badge-processing' :
-                                                    'badge-pending'}`}>
-                                        {inv.status === 'processing' && <Loader2 className="animate-spin mr-1" size={10} />}
-                                        {inv.status}
-                                    </span>
-
-                                    {/* Actions */}
-                                    <div className="flex items-center gap-2 shrink-0">
-                                        {inv.status === 'processing' ? (
-                                            <span className="text-gray-400 text-xs flex items-center gap-1.5 px-3 py-1.5">
-                                                <Loader2 className="animate-spin" size={13} /> Generating...
+                                    <div className="flex items-center gap-3 w-full sm:flex-1 min-w-0">
+                                        {/* Guest avatar */}
+                                        <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-violet-100 to-purple-100 flex items-center justify-center shrink-0">
+                                            <span className="text-sm font-bold text-violet-600">
+                                                {inv.guestName.charAt(0).toUpperCase()}
                                             </span>
-                                        ) : (
-                                            <button
-                                                onClick={() => handleGeneratePdf(inv.id)}
-                                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${inv.status === 'completed'
+                                        </div>
+
+                                        {/* Guest name */}
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-semibold text-gray-800 text-sm truncate">{inv.guestName}</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto mt-2 sm:mt-0 px-1 sm:px-0">
+
+                                        {/* Status badge */}
+                                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold capitalize shrink-0
+                                    ${inv.status === 'completed' ? 'badge-completed' :
+                                                inv.status === 'failed' ? 'badge-failed' :
+                                                    inv.status === 'processing' ? 'badge-processing' :
+                                                        'badge-pending'}`}>
+                                            {inv.status === 'processing' && <Loader2 className="animate-spin mr-1" size={10} />}
+                                            {inv.status}
+                                        </span>
+
+                                        {/* Actions */}
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            {inv.status === 'processing' ? (
+                                                <span className="text-gray-400 text-xs flex items-center gap-1.5 px-3 py-1.5">
+                                                    <Loader2 className="animate-spin" size={13} /> Generating...
+                                                </span>
+                                            ) : (
+                                                <button
+                                                    onClick={() => handleGeneratePdf(inv.id)}
+                                                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${inv.status === 'completed'
                                                         ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
                                                         : 'bg-violet-50 text-violet-700 hover:bg-violet-100'
-                                                    }`}
-                                            >
-                                                <Download size={13} /> {inv.status === 'completed' ? 'Download PDF' : 'Generate PDF'}
-                                            </button>
-                                        )}
+                                                        }`}
+                                                >
+                                                    <Download size={13} /> {inv.status === 'completed' ? 'Download PDF' : 'Generate PDF'}
+                                                </button>
+                                            )}
 
-                                        {!(inv.status === 'processing') && (
-                                            <button
-                                                onClick={() => handleDelete(inv.id)}
-                                                className="p-1.5 text-gray-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition opacity-0 group-hover:opacity-100"
-                                                title="Delete"
-                                            >
-                                                <Trash2 size={14} />
-                                            </button>
-                                        )}
+                                            {!(inv.status === 'processing') && (
+                                                <button
+                                                    onClick={() => handleDelete(inv.id)}
+                                                    className="p-1.5 text-gray-400 sm:text-gray-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition sm:opacity-0 group-hover:opacity-100 shrink-0"
+                                                    title="Delete"
+                                                >
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             ))}

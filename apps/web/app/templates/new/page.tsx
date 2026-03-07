@@ -580,11 +580,13 @@ export default function NewTemplate() {
                     <p className="text-xs text-gray-400 mb-4 uppercase font-bold tracking-widest text-center">
                         Canvas Preview — Click text to select, drag to move
                     </p>
-                    <div
-                        ref={canvasContainerRef}
-                        style={{ width: 500, height: 700 }}
-                        className="mx-auto shadow-2xl border"
-                    />
+                    <div className="w-full overflow-x-auto pb-4">
+                        <div
+                            ref={canvasContainerRef}
+                            style={{ width: 500, height: 700 }}
+                            className="mx-auto shadow-2xl border flex-shrink-0"
+                        />
+                    </div>
                 </div>
             </div>
         </AppShell>
