@@ -99,14 +99,15 @@ export async function generatePDF(template: any, guestName: string): Promise<Buf
     if (isHindi) {
         try {
             if (!cachedDevanagariFont) {
-                const fontUrl = 'https://raw.githubusercontent.com/google/fonts/main/ofl/notosansdevanagari/NotoSansDevanagari%5Bwdth%2Cwght%5D.ttf';
+                const fontUrl = 'https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSansDevanagari/NotoSansDevanagari-Regular.ttf';
                 const fontRes = await fetch(fontUrl);
                 if (!fontRes.ok) throw new Error(`Font fetch failed: ${fontRes.status}`);
                 cachedDevanagariFont = await fontRes.arrayBuffer();
             }
             devanagariFont = await pdfDoc.embedFont(cachedDevanagariFont);
-        } catch (fontErr) {
+        } catch (fontErr: any) {
             console.error('Failed to load Devanagari font:', fontErr);
+            throw new Error(`Failed to load Hindi font: ${fontErr.message || fontErr}`);
         }
     }
 
