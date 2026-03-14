@@ -213,8 +213,13 @@ export default function Invitations() {
             const disposition = res.headers.get('Content-Disposition');
             let filename = 'invitation.pdf';
             if (disposition) {
-                const match = disposition.match(/filename="?(.+?)"?$/);
-                if (match) filename = match[1];
+                const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+                if (utf8Match) {
+                    filename = decodeURIComponent(utf8Match[1]);
+                } else {
+                    const asciiMatch = disposition.match(/filename="?([^";]+)"?/i);
+                    if (asciiMatch) filename = asciiMatch[1];
+                }
             }
 
             // Download the PDF blob directly
