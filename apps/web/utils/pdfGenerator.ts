@@ -104,7 +104,7 @@ export async function generatePDF(template: any, guestName: string): Promise<Buf
                 if (!fontRes.ok) throw new Error(`Font fetch failed: ${fontRes.status}`);
                 cachedDevanagariFont = await fontRes.arrayBuffer();
             }
-            devanagariFont = await pdfDoc.embedFont(cachedDevanagariFont);
+            devanagariFont = await pdfDoc.embedFont(cachedDevanagariFont, { subset: true });
         } catch (fontErr: any) {
             console.error('Failed to load Devanagari font:', fontErr);
             throw new Error(`Failed to load Hindi font: ${fontErr.message || fontErr}`);
