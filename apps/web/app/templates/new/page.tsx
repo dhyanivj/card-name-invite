@@ -531,6 +531,7 @@ export default function NewTemplate() {
                                         <option value="cursive">Cursive</option>
                                         <option value="Impact">Impact</option>
                                         <option value="Comic Sans MS">Comic Sans MS</option>
+                                        <option value="Noto Sans Devanagari">Devanagari (Hindi)</option>
                                     </select>
                                 </div>
                                 <div>
