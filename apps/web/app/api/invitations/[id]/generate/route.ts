@@ -39,6 +39,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
                 .replace(/[^a-zA-Z0-9_\-\u0900-\u097F ]/g, '')
                 .replace(/\s+/g, '_');
 
+            const encodedName = encodeURIComponent(safeName);
+
             // Update status to completed (no pdf_url since it's a direct download)
             await supabaseAdmin
                 .from('invitations')
@@ -50,7 +52,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
             return new Response(pdfBytes, {
                 headers: {
                     'Content-Type': 'application/pdf',
-                    'Content-Disposition': `attachment; filename="${safeName}.pdf"`,
+                    'Content-Disposition': `attachment; filename="invitation.pdf"; filename*=UTF-8''${encodedName}.pdf`,
                     'Content-Length': pdfBuffer.length.toString(),
                 },
             });
