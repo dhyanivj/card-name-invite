@@ -99,7 +99,7 @@ export async function generatePDF(template: any, guestName: string): Promise<Buf
     if (isHindi) {
         try {
             if (!cachedDevanagariFont) {
-                const fontUrl = 'https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSansDevanagari/NotoSansDevanagari-Regular.ttf';
+                const fontUrl = 'https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSerifDevanagari/NotoSerifDevanagari-Regular.ttf';
                 const fontRes = await fetch(fontUrl);
                 if (!fontRes.ok) throw new Error(`Font fetch failed: ${fontRes.status}`);
                 cachedDevanagariFont = await fontRes.arrayBuffer();
